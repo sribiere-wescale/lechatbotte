@@ -15,11 +15,14 @@ spec:
     spec:
       initContainers:
       - name: vault-init
-        image: curlimages/curl:latest
+        image: alpine:latest
         command:
         - /bin/sh
         - -c
         - |
+          # Installer les outils nécessaires
+          apk add --no-cache curl jq kubectl
+          
           # Récupérer les secrets depuis Vault
           echo "=== RÉCUPÉRATION DES SECRETS DEPUIS VAULT ==="
           
