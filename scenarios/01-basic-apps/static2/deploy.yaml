@@ -37,20 +37,10 @@ spec:
           echo "Password récupéré depuis Vault: $PASSWORD"
           echo "============================================="
           
-          # Créer le secret Kubernetes
-          cat <<EOF | kubectl apply -f -
-          apiVersion: v1
-          kind: Secret
-          metadata:
-            name: example2
-            namespace: static2
-          type: Opaque
-          stringData:
-            username: "$USERNAME"
-            password: "$PASSWORD"
-          EOF
+          # Mettre à jour le secret Kubernetes existant
+          kubectl patch secret example2 -n static2 --type='json' -p="[{\"op\": \"replace\", \"path\": \"/stringData/username\", \"value\": \"$USERNAME\"}, {\"op\": \"replace\", \"path\": \"/stringData/password\", \"value\": \"$PASSWORD\"}]"
           
-          echo "Secret créé avec succès dans Kubernetes"
+          echo "Secret mis à jour avec succès dans Kubernetes"
         env:
         - name: VAULT_ADDR
           value: "http://vault.vault.svc.cluster.local:8200"
