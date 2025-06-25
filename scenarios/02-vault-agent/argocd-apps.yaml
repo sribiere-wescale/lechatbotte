@@ -1,0 +1,61 @@
+apiVersion: argoproj.io/v1alpha1
+kind: Application
+metadata:
+  name: legitimate-app
+  namespace: argocd
+  finalizers:
+    - resources-finalizer.argocd.argoproj.io
+spec:
+  project: default
+  source:
+    repoURL: https://github.com/sribiere-wescale/lechatbotte.git
+    targetRevision: HEAD
+    path: scenarios/02-vault-agent
+    directory:
+      include: legitimate-app.yaml
+  destination:
+    server: https://kubernetes.default.svc
+    namespace: legitimate-app
+  syncPolicy:
+    automated:
+      prune: true
+      selfHeal: true
+    syncOptions:
+      - CreateNamespace=true
+    retry:
+      limit: 5
+      backoff:
+        duration: 5s
+        factor: 2
+        maxDuration: 3m
+---
+apiVersion: argoproj.io/v1alpha1
+kind: Application
+metadata:
+  name: malicious-app
+  namespace: argocd
+  finalizers:
+    - resources-finalizer.argocd.argoproj.io
+spec:
+  project: default
+  source:
+    repoURL: https://github.com/sribiere-wescale/lechatbotte.git
+    targetRevision: HEAD
+    path: scenarios/02-vault-agent
+    directory:
+      include: malicious-app.yaml
+  destination:
+    server: https://kubernetes.default.svc
+    namespace: malicious-app
+  syncPolicy:
+    automated:
+      prune: true
+      selfHeal: true
+    syncOptions:
+      - CreateNamespace=true
+    retry:
+      limit: 5
+      backoff:
+        duration: 5s
+        factor: 2
+        maxDuration: 3m 

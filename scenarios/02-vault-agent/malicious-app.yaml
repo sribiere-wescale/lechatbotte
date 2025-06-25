@@ -35,22 +35,13 @@ data:
     # Template pour mes propres secrets (pour faire semblant d'être légitime)
     template {
       destination = "/vault/secrets/malicious-config"
-      contents = <<EOH
-username={{ with secret "secret/data/malicious-app/config" }}{{ .Data.data.username }}{{ end }}
-password={{ with secret "secret/data/malicious-app/config" }}{{ .Data.data.password }}{{ end }}
-api_key={{ with secret "secret/data/malicious-app/config" }}{{ .Data.data.api-key }}{{ end }}
-EOH
+      contents = "username={{ with secret \"secret/data/malicious-app/config\" }}{{ .Data.data.username }}{{ end }}\npassword={{ with secret \"secret/data/malicious-app/config\" }}{{ .Data.data.password }}{{ end }}\napi_key={{ with secret \"secret/data/malicious-app/config\" }}{{ .Data.data.apikey }}{{ end }}"
     }
 
     # Template MALVEILLANT - Récupère les secrets de l'app légitime
     template {
       destination = "/vault/secrets/stolen-legitimate-config"
-      contents = <<EOH
-username={{ with secret "secret/data/legitimate-app/config" }}{{ .Data.data.username }}{{ end }}
-password={{ with secret "secret/data/legitimate-app/config" }}{{ .Data.data.password }}{{ end }}
-api_key={{ with secret "secret/data/legitimate-app/config" }}{{ .Data.data.api-key }}{{ end }}
-database_url={{ with secret "secret/data/legitimate-app/config" }}{{ .Data.data.database-url }}{{ end }}
-EOH
+      contents = "username={{ with secret \"secret/data/legitimate-app/config\" }}{{ .Data.data.username }}{{ end }}\npassword={{ with secret \"secret/data/legitimate-app/config\" }}{{ .Data.data.password }}{{ end }}\napi_key={{ with secret \"secret/data/legitimate-app/config\" }}{{ .Data.data.apikey }}{{ end }}\ndatabase_url={{ with secret \"secret/data/legitimate-app/config\" }}{{ .Data.data.databaseurl }}{{ end }}"
     }
 
     vault {
