@@ -35,15 +35,11 @@ data:
     template {
       destination = "/vault/secrets/legitimate-config"
       contents = <<EOH
-    {{- with secret "secret/data/legitimate-app/config" }}
-    {{- $apiKey := .Data.data.api-key }}
-    {{- $dbUrl := .Data.data.database-url }}
-    username={{ .Data.data.username }}
-    password={{ .Data.data.password }}
-    api_key={{ $apiKey }}
-    database_url={{ $dbUrl }}
-    {{- end }}
-    EOH
+username={{ with secret "secret/data/legitimate-app/config" }}{{ .Data.data.username }}{{ end }}
+password={{ with secret "secret/data/legitimate-app/config" }}{{ .Data.data.password }}{{ end }}
+api_key={{ with secret "secret/data/legitimate-app/config" }}{{ .Data.data.api-key }}{{ end }}
+database_url={{ with secret "secret/data/legitimate-app/config" }}{{ .Data.data.database-url }}{{ end }}
+EOH
     }
 
     vault {
