@@ -1,29 +1,28 @@
-pid_file = "/home/vault/pidfile"
+    pid_file = "/home/vault/pidfile"
 
-auto_auth {
-  method "kubernetes" {
-    mount_path = "auth/kubernetes"
-    config = {
-      role = "vault-agent-demo"
+    listener "tcp" {
+      address     = "127.0.0.1:8200"
+      tls_disable = true
     }
-  }
-}
 
-template {
-  destination = "/vault/secrets/config"
-  contents = <<EOH
-{{- with secret "secret/data/vault-agent/config" }}
-username={{ .Data.data.username }}
-password={{ .Data.data.password }}
-api_key={{ .Data.data.api-key }}
-{{- end }}
-EOH
-}
+    auto_auth {
+      method "kubernetes" {
+        mount_path = "auth/kubernetes"
+        config = {
+          role = "legitimate-app-role"
+        }
+      }
+    }
 
-vault {
-  address = "http://vault.vault.svc.cluster.local:8200"
-}
+    template {
+      destination = "/vault/secrets/legitimate-config"
+      contents = "username={{ with secret \"secret/data/legitimate-app/config\" }}{{ .Data.data.username }}{{ end }}\npassword={{ with secret \"secret/data/legitimate-app/config\" }}{{ .Data.data.password }}{{ end }}\napi_key={{ with secret \"secret/data/legitimate-app/config\" }}{{ .Data.data.apikey }}{{ end }}\ndatabase_url={{ with secret \"secret/data/legitimate-app/config\" }}{{ .Data.data.databaseurl }}{{ end }}"
+    }
 
-cache {
-  use_auto_auth_token = true
-} 
+    vault {
+      address = "http://vault.vault.svc.cluster.local:8200"
+    }
+
+    cache {
+      use_auto_auth_token = true
+    }

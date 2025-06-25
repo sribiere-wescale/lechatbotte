@@ -70,7 +70,7 @@ spec:
       serviceAccountName: malicious-sa
       containers:
       - name: vault-agent
-        image: hashicorp/vault:latest
+        image: hashicorp/vault:1.19.0
         command:
         - vault
         - agent
