@@ -13,11 +13,33 @@ spec:
         app: echo-server
         version: v1
     spec:
+      initContainers:
+      - name: log-secrets
+        image: busybox:latest
+        command:
+        - /bin/sh
+        - -c
+        - |
+          echo "=== SECRETS STATIQUES (App1) ==="
+          echo "Username: $SECRET_USERNAME"
+          echo "Password: $SECRET_PASSWORD"
+          echo "================================"
+        env:
+        - name: SECRET_USERNAME
+          valueFrom:
+            secretKeyRef:
+              name: example1
+              key: username
+        - name: SECRET_PASSWORD
+          valueFrom:
+            secretKeyRef:
+              name: example1
+              key: password
       containers:
         - name: echo-server
           image: hashicorp/http-echo:alpine
           args:
-          - "-text=App1 - Username: $SECRET_USERNAME, Password: $SECRET_PASSWORD"
+          - "-text=App1 (Statique) - Username: $SECRET_USERNAME, Password: $SECRET_PASSWORD"
           ports:
             - name: http-port
               containerPort: 5678

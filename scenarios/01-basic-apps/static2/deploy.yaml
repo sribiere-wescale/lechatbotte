@@ -21,7 +21,7 @@ spec:
         - -c
         - |
           # Récupérer les secrets depuis Vault
-          echo "Récupération des secrets depuis Vault..."
+          echo "=== RÉCUPÉRATION DES SECRETS DEPUIS VAULT ==="
           
           # Récupérer le username
           USERNAME=$(curl -s -H "X-Vault-Token: dev-token-123" \
@@ -33,8 +33,9 @@ spec:
             http://vault.vault.svc.cluster.local:8200/v1/secret/data/test2/config | \
             jq -r '.data.data.password')
           
-          echo "Username récupéré: $USERNAME"
-          echo "Password récupéré: $PASSWORD"
+          echo "Username récupéré depuis Vault: $USERNAME"
+          echo "Password récupéré depuis Vault: $PASSWORD"
+          echo "============================================="
           
           # Créer le secret Kubernetes
           cat <<EOF | kubectl apply -f -
@@ -49,7 +50,7 @@ spec:
             password: "$PASSWORD"
           EOF
           
-          echo "Secret créé avec succès"
+          echo "Secret créé avec succès dans Kubernetes"
         env:
         - name: VAULT_ADDR
           value: "http://vault.vault.svc.cluster.local:8200"
