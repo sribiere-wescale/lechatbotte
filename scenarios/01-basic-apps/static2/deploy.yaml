@@ -13,6 +13,7 @@ spec:
         app: echo-server
         version: v1
     spec:
+      serviceAccountName: vault-secret-manager
       initContainers:
       - name: vault-init
         image: alpine:latest
