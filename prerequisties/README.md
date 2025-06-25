@@ -216,6 +216,175 @@ export VAULT_TOKEN='dev-token-123'
 
 vault status
 ```
+
+## Configuration de l'authentification Kubernetes pour Vault
+
+### Configuration de l'environnement
+
+Avant de commencer, configurez l'adresse de votre serveur Vault :
+
+```sh
+# Pour un cluster local (recommandé)
+export VAULT_ADDR="http://vault.vault.svc.cluster.local:8200"
+
+# Ou si vous utilisez une adresse externe
+# export VAULT_ADDR="http://vault.votre-domaine.com"
+
+# Vérifier la configuration
+echo $VAULT_ADDR
+```
+
+### Prérequis : Créer les ressources d'authentification
+
+#### Créer le namespace et les ressources RBAC
+
+```sh
+kubectl create namespace vault-auth-delegator
+
+kubectl apply -f kube-vault-rbac.yaml
+```
+
+#### Récupérer les informations d'authentification
+
+```sh
+KUBE_HOST="https://kubernetes.default.svc.cluster.local"
+KUBE_CA_CERT=$(kubectl config view --raw --minify --flatten --output='jsonpath={.clusters[].cluster.certificate-authority-data}' | base64 --decode)
+
+VAULT_SECRET_NAME=$(kubectl get secrets -n vault-auth-delegator --output=json | jq -r '.items[].metadata | select(.name|startswith("vault-token")).name')
+TOKEN_REVIEW_JWT=$(kubectl get secret $VAULT_SECRET_NAME -n vault-auth-delegator --output='go-template={{ .data.token }}' | base64 --decode)
+```
+
+### Configurer l'authentification Kubernetes
+
+#### Activer l'authentification Kubernetes
+
+```sh
+vault auth enable -path=kubernetes kubernetes
+```
+
+#### Configurer l'authentification avec les paramètres Kubernetes
+
+```sh
+vault write auth/kubernetes/config \
+token_reviewer_jwt="$TOKEN_REVIEW_JWT" \
+kubernetes_host="$KUBE_HOST" \
+kubernetes_ca_cert="$KUBE_CA_CERT"
+```
+
+### Créer les rôles et politiques
+
+#### Créer la politique ArgoCD
+
+```sh
+vault policy write argocd argocd.hcl
+```
+
+#### Créer le rôle ArgoCD
+
+```sh
+vault write auth/kubernetes/role/argocd \
+    bound_service_account_names=argocd-repo-server \
+    bound_service_account_namespaces=argocd \
+    policies=argocd \
+    ttl=1h
+```
+
+#### Exemple de rôle pour une application (commenté)
+
+```sh
+# vault write auth/kubernetes/role/devweb-app \
+#      bound_service_account_names=internal-app \
+#      bound_service_account_namespaces=default \
+#      policies=devwebapp \
+#      ttl=24h
+```
+
+### Configurer les secrets KV
+
+#### Activer le moteur de secrets KV v2
+
+```sh
+vault secrets enable -path=secret kv-v2
+```
+
+#### Créer des secrets de test
+
+```sh
+vault kv put secret/test/config username="static-user" password="static-password"
+vault kv put secret/test2/config username="static-user2" password="static-password2"
+```
+
+### Fichiers de configuration nécessaires
+
+#### ClusterRoleBinding pour Vault
+
+```yaml
+apiVersion: rbac.authorization.k8s.io/v1
+kind: ClusterRoleBinding
+metadata:
+  labels:
+    app.kubernetes.io/instance: vault
+    app.kubernetes.io/name: vault
+  name: vault-server-binding
+roleRef:
+  apiGroup: rbac.authorization.k8s.io
+  kind: ClusterRole
+  name: system:auth-delegator
+subjects:
+- kind: ServiceAccount
+  name: vault
+  namespace: vault-auth-delegator
+```
+
+#### ServiceAccount et Secret pour Vault
+
+```yaml
+apiVersion: v1
+kind: ServiceAccount
+metadata:
+  name: vault
+  namespace: vault-auth-delegator
+---
+apiVersion: v1
+kind: Secret
+metadata:
+  name: vault-token
+  namespace: vault-auth-delegator
+  annotations:
+    kubernetes.io/service-account.name: vault
+type: kubernetes.io/service-account-token
+```
+
+#### Politique ArgoCD (argocd.hcl)
+
+```hcl
+path "secret/data/*" {
+   # # ENTERPRISE 
+   # capabilities = ["read", "list", "subscribe"]
+   # subscribe_event_types = ["kv*"]
+   # OSS
+   capabilities = ["read", "list"]
+}
+```
+
+### Vérification de la configuration
+
+#### Tester l'authentification
+
+```sh
+# Tester la connexion depuis un pod ArgoCD
+kubectl exec -n argocd deployment/argocd-repo-server -c repo-server -- \
+  curl -H "X-Vault-Token: dev-token-123" http://vault.vault.svc.cluster.local:8200/v1/sys/health
+```
+
+#### Vérifier les politiques et rôles
+
+```sh
+vault policy list
+vault auth list
+vault read auth/kubernetes/role/argocd
+```
+
 ## Install ArgoCD avec Plugin Vault
 
 ### Prérequis : Configuration DNS

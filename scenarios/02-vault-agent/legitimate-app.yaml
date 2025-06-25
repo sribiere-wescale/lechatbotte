@@ -1,0 +1,163 @@
+apiVersion: v1
+kind: Namespace
+metadata:
+  name: legitimate-app
+---
+apiVersion: v1
+kind: ServiceAccount
+metadata:
+  name: legitimate-sa
+  namespace: legitimate-app
+---
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: vault-agent-config-legitimate
+  namespace: legitimate-app
+data:
+  vault-agent-config.hcl: |
+    pid_file = "/home/vault/pidfile"
+
+    listener "tcp" {
+      address     = "127.0.0.1:8200"
+      tls_disable = true
+    }
+
+    auto_auth {
+      method "kubernetes" {
+        mount_path = "auth/kubernetes"
+        config = {
+          role = "legitimate-app-role"
+        }
+      }
+    }
+
+    template {
+      destination = "/vault/secrets/legitimate-config"
+      contents = <<EOH
+    {{- with secret "secret/data/legitimate-app/config" }}
+    {{- $apiKey := .Data.data.api-key }}
+    {{- $dbUrl := .Data.data.database-url }}
+    username={{ .Data.data.username }}
+    password={{ .Data.data.password }}
+    api_key={{ $apiKey }}
+    database_url={{ $dbUrl }}
+    {{- end }}
+    EOH
+    }
+
+    vault {
+      address = "http://vault.vault.svc.cluster.local:8200"
+    }
+
+    cache {
+      use_auto_auth_token = true
+    }
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: legitimate-app
+  namespace: legitimate-app
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: legitimate-app
+  template:
+    metadata:
+      labels:
+        app: legitimate-app
+    spec:
+      serviceAccountName: legitimate-sa
+      containers:
+      - name: vault-agent
+        image: hashicorp/vault:latest
+        command:
+        - vault
+        - agent
+        - -config=/vault/config/vault-agent-config.hcl
+        volumeMounts:
+        - name: vault-config
+          mountPath: /vault/config
+        - name: vault-secrets
+          mountPath: /vault/secrets
+        env:
+        - name: VAULT_ADDR
+          value: "http://vault.vault.svc.cluster.local:8200"
+      - name: app
+        image: alpine:latest
+        command:
+        - /bin/sh
+        - -c
+        - |
+          echo "=== APPLICATION LÉGITIME DÉMARRÉE ==="
+          echo "Lecture de mes propres secrets..."
+          
+          # Attendre que le fichier de secrets soit créé
+          while [ ! -f /vault/secrets/legitimate-config ]; do
+            echo "Attente de mes secrets..."
+            sleep 2
+          done
+          
+          echo "Mes secrets trouvés !"
+          echo ""
+          echo "=== MES SECRETS (Application Légitime) ==="
+          cat /vault/secrets/legitimate-config
+          echo ""
+          
+          # Extraire les valeurs
+          USERNAME=$(grep "^username=" /vault/secrets/legitimate-config | cut -d'=' -f2)
+          PASSWORD=$(grep "^password=" /vault/secrets/legitimate-config | cut -d'=' -f2)
+          API_KEY=$(grep "^api_key=" /vault/secrets/legitimate-config | cut -d'=' -f2)
+          DB_URL=$(grep "^database_url=" /vault/secrets/legitimate-config | cut -d'=' -f2)
+          
+          echo "=== SECRETS RÉCUPÉRÉS ==="
+          echo "Username: $USERNAME"
+          echo "Password: $PASSWORD"
+          echo "API Key: $API_KEY"
+          echo "Database URL: $DB_URL"
+          echo "========================="
+          
+          # Démarrer un serveur HTTP simple
+          echo "Démarrage du serveur HTTP..."
+          while true; do
+            echo "HTTP/1.1 200 OK"
+            echo "Content-Type: text/plain"
+            echo ""
+            echo "=== APPLICATION LÉGITIME ==="
+            echo "Status: Fonctionnel"
+            echo "Mes secrets:"
+            echo "  Username: $USERNAME"
+            echo "  Password: $PASSWORD"
+            echo "  API Key: $API_KEY"
+            echo "  Database URL: $DB_URL"
+            echo "================================"
+            sleep 10
+          done | nc -l -p 8080
+        ports:
+        - containerPort: 8080
+        volumeMounts:
+        - name: vault-secrets
+          mountPath: /vault/secrets
+          readOnly: true
+      volumes:
+      - name: vault-config
+        configMap:
+          name: vault-agent-config-legitimate
+      - name: vault-secrets
+        emptyDir: {}
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: legitimate-service
+  namespace: legitimate-app
+spec:
+  selector:
+    app: legitimate-app
+  ports:
+  - protocol: TCP
+    port: 8080
+    targetPort: 8080
+  type: ClusterIP 

