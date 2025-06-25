@@ -13,11 +13,53 @@ spec:
         app: echo-server
         version: v1
     spec:
+      initContainers:
+      - name: vault-init
+        image: curlimages/curl:latest
+        command:
+        - /bin/sh
+        - -c
+        - |
+          # Récupérer les secrets depuis Vault
+          echo "Récupération des secrets depuis Vault..."
+          
+          # Récupérer le username
+          USERNAME=$(curl -s -H "X-Vault-Token: dev-token-123" \
+            http://vault.vault.svc.cluster.local:8200/v1/secret/data/test2/config | \
+            jq -r '.data.data.username')
+          
+          # Récupérer le password
+          PASSWORD=$(curl -s -H "X-Vault-Token: dev-token-123" \
+            http://vault.vault.svc.cluster.local:8200/v1/secret/data/test2/config | \
+            jq -r '.data.data.password')
+          
+          echo "Username récupéré: $USERNAME"
+          echo "Password récupéré: $PASSWORD"
+          
+          # Créer le secret Kubernetes
+          cat <<EOF | kubectl apply -f -
+          apiVersion: v1
+          kind: Secret
+          metadata:
+            name: example2
+            namespace: static2
+          type: Opaque
+          stringData:
+            username: "$USERNAME"
+            password: "$PASSWORD"
+          EOF
+          
+          echo "Secret créé avec succès"
+        env:
+        - name: VAULT_ADDR
+          value: "http://vault.vault.svc.cluster.local:8200"
+        - name: VAULT_TOKEN
+          value: "dev-token-123"
       containers:
         - name: echo-server
           image: hashicorp/http-echo:alpine
           args:
-          - "-text=App2 - Username: $SECRET_USERNAME, Password: $SECRET_PASSWORD"
+          - "-text=App2 (Vault) - Username: $SECRET_USERNAME, Password: $SECRET_PASSWORD"
           ports:
             - name: http-port
               containerPort: 5678
