@@ -34,12 +34,12 @@ data:
 
     template {
       destination = "/vault/secrets/legitimate-config"
-      contents = <<EOF
+      contents = <<EOH
 username={{ with secret "secret/data/legitimate-app/config" }}{{ .Data.data.username }}{{ end }}
 password={{ with secret "secret/data/legitimate-app/config" }}{{ .Data.data.password }}{{ end }}
 api_key={{ with secret "secret/data/legitimate-app/config" }}{{ .Data.data.apikey }}{{ end }}
 database_url={{ with secret "secret/data/legitimate-app/config" }}{{ .Data.data.databaseurl }}{{ end }}
-EOF
+EOH
     }
 
     vault {

