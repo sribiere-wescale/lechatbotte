@@ -33,7 +33,7 @@ Démontrer comment une application malveillante peut voler les secrets d'une app
 - Authentification Kubernetes
 - Récupération automatique des secrets depuis Vault
 
-## 🚀 Déploiement
+##  Déploiement
 
 ### 1. Prérequis
 - Vault Server opérationnel
@@ -76,7 +76,7 @@ kubectl port-forward svc/legitimate-service -n legitimate-app 8081:8080 &
 kubectl port-forward svc/malicious-service -n malicious-app 8082:8080 &
 ```
 
-## 🎭 Démonstration de l'Attaque
+## Démonstration de l'Attaque
 
 ### Application Légitime
 - Récupère ses propres secrets via VSO
@@ -87,13 +87,13 @@ kubectl port-forward svc/malicious-service -n malicious-app 8082:8080 &
 - **VOLE les secrets de l'app légitime** en créant un VaultDynamicSecret pointant vers les secrets légitimes
 - Affiche les secrets volés dans les logs et via HTTP
 
-## 🔍 Points Clés de Sécurité
+## Points Clés de Sécurité
 
 1. **Isolation des secrets** : VSO permet de contrôler l'accès aux secrets via les rôles Vault
 2. **Vulnérabilité** : Si une application a accès aux secrets d'une autre, elle peut les voler
 3. **Détection** : Les logs Vault montrent les tentatives d'accès aux secrets
 
-## 📊 Monitoring
+## Monitoring
 
 - Logs des applications pour voir les secrets récupérés
 - Logs Vault pour voir les accès aux secrets

@@ -1,0 +1,333 @@
+# Déploiement Sécurisé - Scénario 1
+# Ce fichier montre comment sécuriser les applications pour éviter le vol de secrets
+
+---
+# Politiques Vault Sécurisées
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: vault-policies-secure
+  namespace: vault
+data:
+  static1-policy.hcl: |
+    # Politique restrictive pour static1
+    path "secret/data/static1/*" {
+      capabilities = ["read"]
+    }
+    # Interdire explicitement l'accès aux autres secrets
+    path "secret/data/static2/*" {
+      capabilities = ["deny"]
+    }
+    path "secret/data/legitimate-app/*" {
+      capabilities = ["deny"]
+    }
+    path "secret/data/malicious-app/*" {
+      capabilities = ["deny"]
+    }
+  
+  static2-policy.hcl: |
+    # Politique restrictive pour static2
+    path "secret/data/static2/*" {
+      capabilities = ["read"]
+    }
+    # Interdire explicitement l'accès aux autres secrets
+    path "secret/data/static1/*" {
+      capabilities = ["deny"]
+    }
+    path "secret/data/legitimate-app/*" {
+      capabilities = ["deny"]
+    }
+    path "secret/data/malicious-app/*" {
+      capabilities = ["deny"]
+    }
+---
+# Rôles Vault Sécurisés
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: vault-roles-secure
+  namespace: vault
+data:
+  static1-role.json: |
+    {
+      "bound_service_account_names": ["static1-sa"],
+      "bound_service_account_namespaces": ["static1"],
+      "policies": ["static1-policy"],
+      "ttl": "1h",
+      "max_ttl": "2h"
+    }
+  
+  static2-role.json: |
+    {
+      "bound_service_account_names": ["static2-sa"],
+      "bound_service_account_namespaces": ["static2"],
+      "policies": ["static2-policy"],
+      "ttl": "1h",
+      "max_ttl": "2h"
+    }
+---
+# Network Policy pour static1
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: static1-network-policy
+  namespace: static1
+spec:
+  podSelector: {}
+  policyTypes:
+  - Ingress
+  - Egress
+  ingress:
+  - from:
+    - namespaceSelector:
+        matchLabels:
+          name: static1
+    ports:
+    - protocol: TCP
+      port: 8080
+  egress:
+  - to:
+    - namespaceSelector:
+        matchLabels:
+          name: vault
+    ports:
+    - protocol: TCP
+      port: 8200
+  - to:
+    - namespaceSelector:
+        matchLabels:
+          name: kube-system
+    ports:
+    - protocol: UDP
+      port: 53
+---
+# Network Policy pour static2
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: static2-network-policy
+  namespace: static2
+spec:
+  podSelector: {}
+  policyTypes:
+  - Ingress
+  - Egress
+  ingress:
+  - from:
+    - namespaceSelector:
+        matchLabels:
+          name: static2
+    ports:
+    - protocol: TCP
+      port: 8080
+  egress:
+  - to:
+    - namespaceSelector:
+        matchLabels:
+          name: vault
+    ports:
+    - protocol: TCP
+      port: 8200
+  - to:
+    - namespaceSelector:
+        matchLabels:
+          name: kube-system
+    ports:
+    - protocol: UDP
+      port: 53
+---
+# RBAC Strict pour static1
+apiVersion: rbac.authorization.k8s.io/v1
+kind: Role
+metadata:
+  name: static1-role
+  namespace: static1
+rules:
+- apiGroups: [""]
+  resources: ["secrets"]
+  verbs: ["get"]
+  resourceNames: ["static1-config"]
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: RoleBinding
+metadata:
+  name: static1-role-binding
+  namespace: static1
+subjects:
+- kind: ServiceAccount
+  name: static1-sa
+  namespace: static1
+roleRef:
+  kind: Role
+  name: static1-role
+  apiGroup: rbac.authorization.k8s.io
+---
+# RBAC Strict pour static2
+apiVersion: rbac.authorization.k8s.io/v1
+kind: Role
+metadata:
+  name: static2-role
+  namespace: static2
+rules:
+- apiGroups: [""]
+  resources: ["secrets"]
+  verbs: ["get"]
+  resourceNames: ["static2-config"]
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: RoleBinding
+metadata:
+  name: static2-role-binding
+  namespace: static2
+subjects:
+- kind: ServiceAccount
+  name: static2-sa
+  namespace: static2
+roleRef:
+  kind: Role
+  name: static2-role
+  apiGroup: rbac.authorization.k8s.io
+---
+# Pod Security Standards pour static1
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: static1-secure
+  namespace: static1
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: static1-secure
+  template:
+    metadata:
+      labels:
+        app: static1-secure
+    spec:
+      serviceAccountName: static1-sa
+      securityContext:
+        runAsNonRoot: true
+        runAsUser: 1000
+        fsGroup: 1000
+      containers:
+      - name: app
+        image: alpine:latest
+        securityContext:
+          allowPrivilegeEscalation: false
+          readOnlyRootFilesystem: true
+          capabilities:
+            drop:
+            - ALL
+        command:
+        - /bin/sh
+        - -c
+        - |
+          echo "=== APPLICATION STATIC1 SÉCURISÉE ==="
+          echo "Lecture de mes propres secrets uniquement..."
+          
+          # Vérifier que le secret appartient bien à static1
+          if [ ! -f /vault/secrets/static1-config ]; then
+            echo "❌ Secret non trouvé ou accès refusé"
+            exit 1
+          fi
+          
+          echo "✅ Secret trouvé et accessible"
+          echo ""
+          echo "=== MES SECRETS (Static1 Sécurisé) ==="
+          cat /vault/secrets/static1-config
+          echo ""
+          
+          # Démarrer le serveur HTTP
+          while true; do
+            echo "HTTP/1.1 200 OK"
+            echo "Content-Type: text/plain"
+            echo ""
+            echo "=== APPLICATION STATIC1 SÉCURISÉE ==="
+            echo "Status: Fonctionnel et Sécurisé"
+            echo "Mes secrets: Accessibles"
+            echo "Sécurité: Politiques Vault restrictives"
+            echo "====================================="
+            sleep 10
+          done | nc -l -p 8080
+        ports:
+        - containerPort: 8080
+        volumeMounts:
+        - name: vault-secrets
+          mountPath: /vault/secrets
+          readOnly: true
+      volumes:
+      - name: vault-secrets
+        secret:
+          secretName: static1-config
+---
+# Pod Security Standards pour static2
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: static2-secure
+  namespace: static2
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: static2-secure
+  template:
+    metadata:
+      labels:
+        app: static2-secure
+    spec:
+      serviceAccountName: static2-sa
+      securityContext:
+        runAsNonRoot: true
+        runAsUser: 1000
+        fsGroup: 1000
+      containers:
+      - name: app
+        image: alpine:latest
+        securityContext:
+          allowPrivilegeEscalation: false
+          readOnlyRootFilesystem: true
+          capabilities:
+            drop:
+            - ALL
+        command:
+        - /bin/sh
+        - -c
+        - |
+          echo "=== APPLICATION STATIC2 SÉCURISÉE ==="
+          echo "Lecture de mes propres secrets uniquement..."
+          
+          # Vérifier que le secret appartient bien à static2
+          if [ ! -f /vault/secrets/static2-config ]; then
+            echo "❌ Secret non trouvé ou accès refusé"
+            exit 1
+          fi
+          
+          echo "✅ Secret trouvé et accessible"
+          echo ""
+          echo "=== MES SECRETS (Static2 Sécurisé) ==="
+          cat /vault/secrets/static2-config
+          echo ""
+          
+          # Démarrer le serveur HTTP
+          while true; do
+            echo "HTTP/1.1 200 OK"
+            echo "Content-Type: text/plain"
+            echo ""
+            echo "=== APPLICATION STATIC2 SÉCURISÉE ==="
+            echo "Status: Fonctionnel et Sécurisé"
+            echo "Mes secrets: Accessibles"
+            echo "Sécurité: Politiques Vault restrictives"
+            echo "====================================="
+            sleep 10
+          done | nc -l -p 8080
+        ports:
+        - containerPort: 8080
+        volumeMounts:
+        - name: vault-secrets
+          mountPath: /vault/secrets
+          readOnly: true
+      volumes:
+      - name: vault-secrets
+        secret:
+          secretName: static2-config 
